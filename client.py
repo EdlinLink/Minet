@@ -1,9 +1,11 @@
 #!/usr/bin/env python
 # Simple Gopher Client - Chapter 1
 
-import socket, sys
+import socket, sys, thread, time
 from Msg import HANDSHAKE, handshake_toForm, SHEET, sheet_toForm
 from Logic import cmd_valid, cmd_reply
+
+PROCESSING = True
 
 def update_NameList(list_body):
 	global NameList
@@ -38,16 +40,16 @@ def make_sheet(cmd):
 		
 	return sheet
 
-def handle(sheet_str):
-	global Statue, Username
+def login_handle(clientsock):
+	global Statue
 
+	sheet_str = clientsock.recv(1024)
 	allsheet = sheet_str.split("CS1.0")
 	sheet_count = len(allsheet)
 
 	for sheet_str in allsheet[1:]:	# because the sheet[0]=""
 		sheet = sheet_toForm(sheet_str)
 		
-		# STATUS ------------------------------------------------
 		if sheet.Cmd=="STATUS":
 			if sheet.Arg=="1":
 				print "# LOGIN SUCCEED!"
@@ -56,16 +58,43 @@ def handle(sheet_str):
 				print sheet.Body
 				Status["login"] = False
 
-		# LIST --------------------------------------------------
-		if sheet.Cmd=="LIST":
-			update_NameList(sheet.Body)
-			print "# current LIST:"
-			print_NameList()
 
-		# LEAVE -------------------------------------------------
-		if sheet.Cmd=="LEAVE":
-			if Username==sheet.Arg:
-				Status["login"] = False
+
+
+def handle(clientsock):
+	global Statue, Username, PROCESSING
+
+	while 1:
+#		try:
+		sheet_str = clientsock.recv(1024)
+		allsheet = sheet_str.split("CS1.0")
+		sheet_count = len(allsheet)
+
+		for sheet_str in allsheet[1:]:	# because the sheet[0]=""
+			sheet = sheet_toForm(sheet_str)
+			
+			# STATUS ------------------------------------------------
+			if sheet.Cmd=="STATUS":
+				if sheet.Arg=="1":
+					print "# LOGIN SUCCEED!"
+					Status["login"] = True
+				else:
+					print sheet.Body
+					Status["login"] = False
+
+			# LIST --------------------------------------------------
+			if sheet.Cmd=="LIST":
+				update_NameList(sheet.Body)
+				print "# current LIST:"
+				print_NameList()
+
+			# LEAVE -------------------------------------------------
+			if sheet.Cmd=="LEAVE":
+				if Username==sheet.Arg:
+					Status["login"] = False
+
+		PROCESSING = False
+#		except:
 
 port = 51423
 host = "127.0.0.1"
@@ -76,61 +105,74 @@ myport = "11270"
 NameList = {}
 Username = ""
 
-
-
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.connect((host, port))
+def main():
+	global Username, NameList, PROCESSING
+	s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+	s.connect((host, port))
 
 #--------------------------- handshake -----------------------------
-handshake = HANDSHAKE()
-handshake.Type = "MINET"
-handshake.Hostname = host
-s.send(handshake.toStr())						# send handshake
-handshake_str = s.recv(1024)					# get handshake_reply
-handshake = handshake_toForm(handshake_str)
+	handshake = HANDSHAKE()
+	handshake.Type = "MINET"
+	handshake.Hostname = host
+	s.send(handshake.toStr())						# send handshake
+	handshake_str = s.recv(1024)					# get handshake_reply
+	handshake = handshake_toForm(handshake_str)
 #===================================================================	
 
 
-if handshake.Type != "MIRO" or handshake.Hostname != host:
-	s.close()
-	print "@@@ connection NOT from Miro!"
-else:
-	print "# please enter 'LOGIN Username':"
+	if handshake.Type != "MIRO" or handshake.Hostname != host:
+		s.close()
+		print "@@@ connection NOT from Miro!"
+	else:
+		print "# please enter 'LOGIN Username':"
 
-	while 1:
-		print "~",
-		cmd_input = raw_input()
-	
-		if cmd_input=="LEAVE":
-			break
+		while 1:
+			print "~",
+			cmd_input = raw_input()
+		
+			if cmd_input=="LEAVE":
+				break
 
-		cmd = cmd_input.split(" ")
+			cmd = cmd_input.split(" ")
 
-		# try to login ================================================
-		if cmd_valid(cmd) and cmd[0]=="LOGIN":
-			sheet = make_sheet(cmd)
-			s.send(sheet.toStr())
-
-			reply_str = s.recv(1024)
-			handle(reply_str)
-
-			# has login ---------------------------------
-			username = sheet.Arg
-			while Status["login"]:
-				print username+"$",
-				cmd_input = raw_input()
-				cmd = cmd_input.split(" ")
+			# try to login ================================================
+			if cmd_valid(cmd) and cmd[0]=="LOGIN":
 				sheet = make_sheet(cmd)
 				s.send(sheet.toStr())
 
-				if cmd_reply(cmd):
-					reply_str = s.recv(1024)
-					handle(reply_str)
-			# end login ---------------------------------
-			break
+				login_handle(s)
 
-		else:
-			print "# command ERROR!"
-		# out of login ===============================================
-	
-	s.close()
+				if Status["login"]:
+					t = thread.start_new_thread(handle, (s,))
+
+				while Status["login"]:
+					if not PROCESSING:
+						print Username+"$",
+						cmd_input = raw_input()
+						cmd = cmd_input.split(" ")
+						if cmd_valid(cmd):
+							sheet = make_sheet(cmd)
+							PROCESSING = True
+							s.send(sheet.toStr())
+						else:
+							print "# command ERROR!"
+
+					else:
+						time.sleep(0.1)
+
+					#if cmd_reply(cmd):
+						#reply_str = s.recv(1024)
+						#handle(reply_str)
+
+				# end login ---------------------------------
+				break
+
+			else:
+				print "# command ERROR!"
+			# out of login ===============================================
+		
+		s.close()
+
+#=========================================
+
+main()

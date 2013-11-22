@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # simple server - Chapter 1
 
-import socket, thread
+import socket, thread, time
 from Msg import HANDSHAKE, handshake_toForm, SHEET, sheet_toForm
 from Logic import cmd_valid
 
@@ -42,24 +42,32 @@ def login_handle(sheet_str, clientsock, clientaddr):
 				status.fill_body("@@@ username is online!\n")
 
 		if status.Arg == "1":
-			list_body = listname()
-			list = SHEET()
-			list.fill("LIST")
-			list.fill_body(list_body)
-			clientsock.send(status.toStr()+list.toStr())			#send status
+			clientsock.send(status.toStr())							#send status
 			print "# send STATUS reply! [status=" + status.Arg + "]"
-			print "# send LIST reply!"
-			print "# current LIST: "
-			print_NameList()
+
+			time.sleep(0.01)
+			getlist_handle(clientsock)
 			return True, sheet.Arg
 		else:
 			clientsock.send(status.toStr())							
 			print "# send STATUS to clinet! [status=" + status.Arg + "]"
-			print "[58]"+ status.toStr()
 	
 	print "# someone LOGIN FAIL(1)."
 	return False, ""
 	# LOGIN end ====================================
+
+# handle the GETLIST command from client	
+def getlist_handle(clientsock):
+	print "# recv GETLIST request."
+	list_body = listname()
+	list = SHEET()
+	list.fill("LIST")
+	list.fill_body(list_body)
+	clientsock.send(list.toStr())
+	print "# send LIST reply."
+	print "# current LIST: "
+	print_NameList()
+
 
 def handle(sheet_str, username, clientsock):
 	global NameList
@@ -69,18 +77,10 @@ def handle(sheet_str, username, clientsock):
 
 	for sheet_str in allsheet[1:]:
 		sheet = sheet_toForm(sheet_str)
+
 		# GETLIST --------------------------------------------------------
 		if sheet.Cmd=="GETLIST":
-			print "# recv GETLIST request."
-			list_body = listname()
-			list = SHEET()
-			list.fill("LIST")
-			list.fill_body(list_body)
-			clientsock.send(list.toStr())
-			print "# send LIST reply."
-			print "# current LIST: "
-			print_NameList()
-		# GETLIST end ====================================================
+			getlist_handle(clientsock)
 
 		# LEAVE ----------------------------------------------------------
 		if sheet.Cmd=="LEAVE":
