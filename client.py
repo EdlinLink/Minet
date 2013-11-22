@@ -15,6 +15,15 @@ def update_NameList(list_body):
 		recd = item.split(" ")
 		NameList[recd[0]] = (True, recd[1], recd[2])
 
+def print_NameList():
+	global NameList
+	print "[",	  
+	for i in NameList:
+		if NameList[i][0]==True:
+			print i + ".",
+	print "]\n"
+
+
 def make_sheet(cmd):
 	global Username
 	sheet = SHEET()
@@ -29,28 +38,34 @@ def make_sheet(cmd):
 		
 	return sheet
 
-def handle(sheet_str, status):
-	global Username
+def handle(sheet_str):
+	global Statue, Username
 
 	allsheet = sheet_str.split("CS1.0")
 	sheet_count = len(allsheet)
 
 	for sheet_str in allsheet[1:]:	# because the sheet[0]=""
 		sheet = sheet_toForm(sheet_str)
+		
+		# STATUS ------------------------------------------------
 		if sheet.Cmd=="STATUS":
 			if sheet.Arg=="1":
-				print "@@@ Login Successful!"
-				status["login"] = True
+				print "# LOGIN SUCCEED!"
+				Status["login"] = True
 			else:
 				print sheet.Body
-				status["login"] = False
+				Status["login"] = False
+
+		# LIST --------------------------------------------------
 		if sheet.Cmd=="LIST":
 			update_NameList(sheet.Body)
+			print "# current LIST:"
+			print_NameList()
+
+		# LEAVE -------------------------------------------------
 		if sheet.Cmd=="LEAVE":
 			if Username==sheet.Arg:
-				status["login"] = False
-		
-	return status
+				Status["login"] = False
 
 port = 51423
 host = "127.0.0.1"
@@ -66,7 +81,7 @@ Username = ""
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.connect((host, port))
 
-#--------------------------- handshake ------------------------------
+#--------------------------- handshake -----------------------------
 handshake = HANDSHAKE()
 handshake.Type = "MINET"
 handshake.Hostname = host
@@ -81,24 +96,41 @@ if handshake.Type != "MIRO" or handshake.Hostname != host:
 	print "@@@ connection NOT from Miro!"
 else:
 	print "# please enter 'LOGIN Username':"
+
 	while 1:
-		print "$",
+		print "~",
 		cmd_input = raw_input()
-		#cmd_input = "LOGIN Client02"
+	
+		if cmd_input=="LEAVE":
+			break
+
 		cmd = cmd_input.split(" ")
-		if cmd_valid(cmd):
+
+		# try to login ================================================
+		if cmd_valid(cmd) and cmd[0]=="LOGIN":
 			sheet = make_sheet(cmd)
 			s.send(sheet.toStr())
 
-			if cmd_reply(cmd):
-				reply_str = s.recv(1024)
-				Status = handle(reply_str, Status)
+			reply_str = s.recv(1024)
+			handle(reply_str)
 
-			if Status["login"]==False:
-				print "# leave program."
-				break
+			# has login ---------------------------------
+			username = sheet.Arg
+			while Status["login"]:
+				print username+"$",
+				cmd_input = raw_input()
+				cmd = cmd_input.split(" ")
+				sheet = make_sheet(cmd)
+				s.send(sheet.toStr())
+
+				if cmd_reply(cmd):
+					reply_str = s.recv(1024)
+					handle(reply_str)
+			# end login ---------------------------------
+			break
 
 		else:
-			print "@@@ command ERROR!"
-
+			print "# command ERROR!"
+		# out of login ===============================================
+	
 	s.close()
