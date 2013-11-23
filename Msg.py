@@ -17,7 +17,10 @@ def sheet_toForm(msg):
 	other.Cmd = requestline[1]
 	if len(requestline) == 3:
 		other.Arg = requestline[2]
-
+	elif len(requestline) == 4:
+		other.Arg = requestline[2]
+		other.Arg2 = requestline[3]
+		
 	item = 1
 	while(item < len(allline)):
 		if allline[item] != "":
@@ -47,18 +50,23 @@ class SHEET:
 		self.Version = "CS1.0"
 		self.Cmd = ""
 		self.Arg = ""
+		self.Arg2 = ""
 		self.Headline = {}
 		self.Body = ""
-	def fill(self, cmd, arg=""):
+	def fill(self, cmd, arg="", arg2=""):
 		self.Cmd = cmd
 		self.Arg = arg
+		self.Arg2 = arg2
 	def fill_body(self, content):
 		self.Body = content
 	def toStr(self):
+
 		if self.Arg == "":
 			buf = self.Version + " " + self.Cmd + "\n"
-		else:
+		elif self.Arg2 == "":
 			buf = self.Version + " " + self.Cmd + " " + self.Arg + "\n"
+		else:
+			buf = self.Version + " " + self.Cmd + " " + self.Arg + " " + self.Arg2 +  "\n"
 
 		for item in self.Headline:
 			buf = buf + item + " " + self.Headline[item] + "\n"

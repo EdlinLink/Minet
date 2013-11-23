@@ -47,6 +47,8 @@ def login_handle(sheet_str, clientsock, clientaddr):
 
 			time.sleep(0.01)
 			getlist_handle(clientsock)
+			print "[50]"
+			update_handle(clientsock, sheet.Arg, "1")
 			return True, sheet.Arg
 		else:
 			clientsock.send(status.toStr())							
@@ -55,6 +57,25 @@ def login_handle(sheet_str, clientsock, clientaddr):
 	print "# someone LOGIN FAIL(1)."
 	return False, ""
 	# LOGIN end ====================================
+
+# the definition of UPDATE is not clear
+def update_handle(clientsock, username, status):
+	'''
+	global NameList, AllSocket
+	
+	sheet = SHEET()
+	print "[new67]"
+	sheet.fill("UPDATE", username, status)
+
+	for name in AllSocket:
+		print "[70]"+name
+		if NameList.has_key(name) and NameList[name][0] == True:
+			s = AllSocket[name]
+			s.send(sheet.toStr())
+
+	AllSocket[username] = clientsock
+	print "# send UPDATE to everyone."
+	'''
 
 # handle the GETLIST command from client	
 def getlist_handle(clientsock):
@@ -91,6 +112,7 @@ def handle(sheet_str, username, clientsock):
 			clientsock.send(sheet.toStr())
 			print "# send LEAVE reply."
 
+			update_handle(clientsock, username, "0")
 		# LEAVE end ======================================================
 
 		#return False , ""
@@ -111,6 +133,7 @@ myhost = "127.0.0.1"
 host = ''
 port = 51423
 NameList = {}
+AllSocket = {}
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -158,7 +181,7 @@ def start():
 	while 1:
 		clientsock, clientaddr = s.accept()
 		t = thread.start_new_thread(main, (clientsock, clientaddr,))
-		all_threads.append(t)
+#		all_threads.append(t)
 	s.close()
 
 

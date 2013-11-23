@@ -15,7 +15,7 @@ def update_NameList(list_body):
 		if item=="":
 			break
 		recd = item.split(" ")
-		NameList[recd[0]] = (True, recd[1], recd[2])
+		NameList[recd[0]] = [True, recd[1], recd[2]]
 
 def print_NameList():
 	global NameList
@@ -32,22 +32,22 @@ def make_sheet(cmd):
 	if cmd[0]=="LOGIN":
 		Username = cmd[1]
 		sheet.fill(cmd[0], cmd[1])
-		sheet.headAdd("Port", "11270")
+		sheet.headAdd("Port", MY_PORT)
 	if cmd[0]=="GETLIST":
 		sheet.fill(cmd[0])
 	if cmd[0]=="LEAVE":
 		sheet.fill(cmd[0], Username)
 		
+	date = time.strftime("%H:%M:%S@%Y-%m-%d", time.localtime())
+	sheet.headAdd("Date", date)
 	return sheet
 
 def login_handle(clientsock):
-	global Statue
-
+	global Status
 	sheet_str = clientsock.recv(1024)
 	allsheet = sheet_str.split("CS1.0")
-	sheet_count = len(allsheet)
 
-	for sheet_str in allsheet[1:]:	# because the sheet[0]=""
+	for sheet_str in allsheet[1:]:
 		sheet = sheet_toForm(sheet_str)
 		
 		if sheet.Cmd=="STATUS":
@@ -93,41 +93,49 @@ def handle(clientsock):
 				if Username==sheet.Arg:
 					Status["login"] = False
 
+			# UPDATE ------------------------------------------------
+			if sheet.Cmd=="UPDATE":
+				if sheet.Arg2 == "1":
+					sheet = make_sheet(["GETLIST"])
+					clientsock.send(sheet.toStr())
+				else:
+					NameList[sheet.Arg][0] = False
+
 		PROCESSING = False
 #		except:
 
-port = 51423
-host = "127.0.0.1"
+SERVER_HOST = "127.0.0.1"
+SERVER_PORT = 51423
+MY_PORT = "11270"
+
 Status={}
 Status["login"]= False
 
-myport = "11270"
 NameList = {}
 Username = ""
 
 def main():
 	global Username, NameList, PROCESSING
 	s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-	s.connect((host, port))
+	s.connect((SERVER_HOST, SERVER_PORT))
 
-#--------------------------- handshake -----------------------------
+	# handshake ----------------------------------------------------
 	handshake = HANDSHAKE()
 	handshake.Type = "MINET"
-	handshake.Hostname = host
-	s.send(handshake.toStr())						# send handshake
-	handshake_str = s.recv(1024)					# get handshake_reply
+	handshake.Hostname = SERVER_HOST
+	s.send(handshake.toStr())
+	handshake_str = s.recv(1024)
 	handshake = handshake_toForm(handshake_str)
-#===================================================================	
+	# --------------------------------------------------------------
 
-
-	if handshake.Type != "MIRO" or handshake.Hostname != host:
+	if handshake.Type != "MIRO" or handshake.Hostname != SERVER_HOST:
 		s.close()
 		print "@@@ connection NOT from Miro!"
 	else:
 		print "# please enter 'LOGIN Username':"
 
 		while 1:
-			print "~",
+			print "$:",
 			cmd_input = raw_input()
 		
 			if cmd_input=="LEAVE":
@@ -135,7 +143,7 @@ def main():
 
 			cmd = cmd_input.split(" ")
 
-			# try to login ================================================
+			# try to login -----------------------------------------
 			if cmd_valid(cmd) and cmd[0]=="LOGIN":
 				sheet = make_sheet(cmd)
 				s.send(sheet.toStr())
@@ -147,7 +155,7 @@ def main():
 
 				while Status["login"]:
 					if not PROCESSING:
-						print Username+"$",
+						print "["+Username+"]$",
 						cmd_input = raw_input()
 						cmd = cmd_input.split(" ")
 						if cmd_valid(cmd):
@@ -156,23 +164,13 @@ def main():
 							s.send(sheet.toStr())
 						else:
 							print "# command ERROR!"
-
 					else:
 						time.sleep(0.1)
-
-					#if cmd_reply(cmd):
-						#reply_str = s.recv(1024)
-						#handle(reply_str)
-
-				# end login ---------------------------------
 				break
-
 			else:
 				print "# command ERROR!"
-			# out of login ===============================================
 		
 		s.close()
 
-#=========================================
 
 main()
