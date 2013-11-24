@@ -1,5 +1,9 @@
 #!/usr/bin/env python
-# simple server - Chapter 1
+#########################################################################
+# Author:   Edlin (Lin Junhao)                                          #
+# Date:     Nov.25, 2013                                                #
+# Email:    edlinlink@qq.com                                            #   
+#########################################################################
 
 import socket, thread, time
 from Msg import HANDSHAKE, handshake_toForm, SHEET, sheet_toForm
@@ -24,13 +28,17 @@ def print_NameList():
 	print "]"
 
 def login_handle(sheet_str, clientsock, clientaddr):
+	global AllSocket
 
 	sheet = sheet_toForm(sheet_str)
 	# LOGIN ----------------------------------------
 	if sheet.Cmd=="LOGIN":
 		print "# recv LOGIN request!"
 		if sheet.Arg!="" and is_off(sheet.Arg):
-			NameList[sheet.Arg] = [True, clientaddr[0], sheet.Headline["Port"]]
+			print "[33]-"
+			print time.time()
+			NameList[sheet.Arg] = [True, clientaddr[0], sheet.Headline["Port"], time.time()]
+			print NameList[sheet.Arg][3]
 			print "# client [" + sheet.Arg + "] online!"
 			status = SHEET()
 			status.fill("STATUS", "1")
@@ -40,15 +48,19 @@ def login_handle(sheet_str, clientsock, clientaddr):
 			status.fill("STATUS", "0")
 			if not is_off(sheet.Arg):
 				status.fill_body("@@@ username is online!\n")
-
+			
+		status.headAdd("Content-Length", str(len(status.Body)))
 		if status.Arg == "1":
 			clientsock.send(status.toStr())							#send status
 			print "# send STATUS reply! [status=" + status.Arg + "]"
 
 			time.sleep(0.01)
 			getlist_handle(clientsock)
-			print "[50]"
-			update_handle(clientsock, sheet.Arg, "1")
+			print "[54]"
+			update_handle(sheet.Arg, "1")
+			print "[56]"
+			AllSocket[sheet.Arg] = clientsock
+			print "[58]"
 			return True, sheet.Arg
 		else:
 			clientsock.send(status.toStr())							
@@ -59,7 +71,7 @@ def login_handle(sheet_str, clientsock, clientaddr):
 	# LOGIN end ====================================
 
 # the definition of UPDATE is not clear
-def update_handle(clientsock, username, status):
+def update_handle(username, status):
 	'''
 	global NameList, AllSocket
 	
@@ -72,10 +84,8 @@ def update_handle(clientsock, username, status):
 		if NameList.has_key(name) and NameList[name][0] == True:
 			s = AllSocket[name]
 			s.send(sheet.toStr())
-
-	AllSocket[username] = clientsock
-	print "# send UPDATE to everyone."
 	'''
+#	print "# send UPDATE to everyone."
 
 # handle the GETLIST command from client	
 def getlist_handle(clientsock):
@@ -84,11 +94,48 @@ def getlist_handle(clientsock):
 	list = SHEET()
 	list.fill("LIST")
 	list.fill_body(list_body)
+	list.headAdd("Content-Length", str(len(list.Body)))
 	clientsock.send(list.toStr())
 	print "# send LIST reply."
 	print "# current LIST: "
 	print_NameList()
 
+
+def message_handle(clientsock, username, content_str):
+	
+	global NameList, AllSocket
+	
+	sheet = SHEET()
+	sheet.fill("CSMESSAGE", username)
+	sheet.fill_body(content_str)
+
+	for name in AllSocket:
+		if NameList.has_key(name) and NameList[name][0] == True:
+			s = AllSocket[name]
+			s.send(sheet.toStr())
+
+	print "# send CSMESSAGE to all clients."	
+
+def beat_handle(username):
+	global NameList
+	NameList[username][3] = time.time()
+	
+
+def check_beat():
+	global NameList
+	cur_time = time.time()
+
+	while 1:
+		if time.time() - cur_time > BEAT_TIME:
+			cur_time = time.time()
+
+			for client in NameList:
+				if NameList[client][0]:
+					if time.time() - NameList[client][3] > BEAT_TIME + EPSILON:
+						NameList[client][0] = False
+						update_handle(client, "0")
+		else:
+			time.sleep(1)
 
 def handle(sheet_str, username, clientsock):
 	global NameList
@@ -112,10 +159,19 @@ def handle(sheet_str, username, clientsock):
 			clientsock.send(sheet.toStr())
 			print "# send LEAVE reply."
 
-			update_handle(clientsock, username, "0")
-		# LEAVE end ======================================================
+			update_handle(username, "0")
+			del AllSocket[username]
 
-		#return False , ""
+		# MESSAGE --------------------------------------------------------
+		if sheet.Cmd=="MESSAGE":
+			print "# recv MESSAGE request."
+			print "# MESSAGE: '" + sheet.Body + "'"
+			message_handle(clientsock, sheet.Arg, sheet.Body)
+
+		# BEAT -----------------------------------------------------------
+		if sheet.Cmd=="BEAT":
+			print "# recv BEAT request. [" + username + "]"
+			beat_handle(username)
 
 
 
@@ -134,6 +190,9 @@ host = ''
 port = 51423
 NameList = {}
 AllSocket = {}
+cur_time = time.time()
+BEAT_TIME = 10
+EPSILON = 2
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -177,11 +236,10 @@ def main(clientsock, clientaddr):
 
 def start():
 
-	all_threads = []
+	t_bear = thread.start_new_thread(check_beat, ())
 	while 1:
 		clientsock, clientaddr = s.accept()
 		t = thread.start_new_thread(main, (clientsock, clientaddr,))
-#		all_threads.append(t)
 	s.close()
 
 

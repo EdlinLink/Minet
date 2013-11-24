@@ -1,4 +1,9 @@
 #!usr/bin/env python
+#########################################################################
+# Author:   Edlin (Lin Junhao)                                          #
+# Date:     Nov.25, 2013                                                #
+# Email:    edlinlink@qq.com                                            #   
+#########################################################################
 
 
 def handshake_toForm(msg):
@@ -26,13 +31,15 @@ def sheet_toForm(msg):
 		if allline[item] != "":
 			segname, value = allline[item].split(" ")
 			other.headAdd(segname, value)
+			item += 1
 		else:
-			while(item+1 < len(allline)-1): #there will be an "" at the end
-				other.Body = other.Body + allline[item+1]+"\n"
+			item += 1
+			while(item < len(allline) and allline[item]!=""): #there will be an "" at the end
+				other.Body = other.Body + allline[item]+"\n"
 				item = item+1
 			break
 
-		item = item+1
+#		item = item+1
 
 	return other
 
@@ -69,7 +76,7 @@ class SHEET:
 			buf = self.Version + " " + self.Cmd + " " + self.Arg + " " + self.Arg2 +  "\n"
 
 		for item in self.Headline:
-			buf = buf + item + " " + self.Headline[item] + "\n"
+			buf = buf + item + " " + str(self.Headline[item]) + "\n"
 		buf = buf + "\n"
 		buf = buf + self.Body
 		return buf
