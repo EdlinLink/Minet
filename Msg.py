@@ -8,9 +8,12 @@
 
 def handshake_toForm(msg):
 	other = HANDSHAKE()
-	other.Type, other.Hostname = msg.split(" ")
-	other.Hostname, tmp = other.Hostname.split("\n")
-	return other
+	try:
+		other.Type, other.Hostname = msg.split(" ")
+		other.Hostname, tmp = other.Hostname.split("\n")
+		return other
+	except:
+		return other
 
 def sheet_toForm(msg):
 	other = SHEET()

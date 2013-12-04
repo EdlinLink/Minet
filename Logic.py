@@ -13,6 +13,8 @@ def cmd_valid(cmd):
 		return True
 	if len(cmd)>=2 and cmd[0]=="MESSAGE":
 		return True
+	if len(cmd)>=3 and (cmd[0]=="P2PMESSAGE" and cmd[1]!="" and cmd[2]!=""):
+		return True
 	return False
 	
 def cmd_reply(cmd):

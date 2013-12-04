@@ -9,6 +9,86 @@ import socket, thread, time
 from Msg import HANDSHAKE, handshake_toForm, SHEET, sheet_toForm
 from Logic import cmd_valid
 
+myhost = "127.0.0.1"
+host = ''
+port = 51423
+NameList = {}
+AllSocket = {}
+cur_time = time.time()
+BEAT_TIME = 10
+EPSILON = 2
+
+
+def start():
+
+	s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+	s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+	s.bind((host, port))
+	s.listen(10)
+
+	t_beat = thread.start_new_thread(check_beat, ())
+	while 1:
+		clientsock, clientaddr = s.accept()
+		t = thread.start_new_thread(main, (clientsock, clientaddr,))
+	s.close()
+
+
+def check_beat():
+
+	global NameList
+	cur_time = time.time()
+
+	while 1:
+		if time.time() - cur_time > BEAT_TIME:
+			cur_time = time.time()
+
+			for client in NameList:
+				if NameList[client][0]:
+					if time.time() - NameList[client][3] > BEAT_TIME + EPSILON:
+						NameList[client][0] = False
+						update_handle(client, "0")
+						del AllSocket[client]
+
+		else:
+			time.sleep(1)
+
+
+def main(clientsock, clientaddr):
+
+	#-------------------------- handshake --------------------------------	
+	handshake_str = clientsock.recv(1024)			# get handshake
+	handshake = handshake_toForm(handshake_str)
+
+	if handshake.Type != "MINET" :
+		clientsock.close()
+		print "@@@ connection NOT come from Minet!"
+	else:
+		handshake = HANDSHAKE()
+		handshake.Type = "MIRO"
+		handshake.Hostname = myhost
+		clientsock.send(handshake.toStr())			# send handshake_reply
+
+	#============================ login ==================================
+#		try:
+		print "[71]"
+		while 1:
+			cmd_str = clientsock.recv(1024)			# get login 
+			login_tag, username = login_handle(cmd_str, clientsock, clientaddr)
+			if login_tag: break
+
+		#-------------------- command --------------------------------
+		while NameList[username][0]:
+			cmd_str = clientsock.recv(1024)			# get login 
+			if not cmd_str: break
+			handle(cmd_str, username, clientsock)
+		#-------------------------------------------------------------
+#		except:
+		print "# someone LOGIN FAIL(2)."
+	#=====================================================================
+	print "@@@ Finish connection!"
+	clientsock.close()
+
+
 def is_valid(sheet):
 	if sheet.Version=="CS1.0":
 		if sheet.Cmd=="LOGIN" and is_off(sheet.Arg):
@@ -33,13 +113,10 @@ def login_handle(sheet_str, clientsock, clientaddr):
 	sheet = sheet_toForm(sheet_str)
 	# LOGIN ----------------------------------------
 	if sheet.Cmd=="LOGIN":
-		print "# recv LOGIN request!"
+		print "# recv LOGIN request."
 		if sheet.Arg!="" and is_off(sheet.Arg):
-			print "[33]-"
-			print time.time()
 			NameList[sheet.Arg] = [True, clientaddr[0], sheet.Headline["Port"], time.time()]
-			print NameList[sheet.Arg][3]
-			print "# client [" + sheet.Arg + "] online!"
+			print "# ONLINE. [" + sheet.Arg + "]"
 			status = SHEET()
 			status.fill("STATUS", "1")
 
@@ -52,19 +129,16 @@ def login_handle(sheet_str, clientsock, clientaddr):
 		status.headAdd("Content-Length", str(len(status.Body)))
 		if status.Arg == "1":
 			clientsock.send(status.toStr())							#send status
-			print "# send STATUS reply! [status=" + status.Arg + "]"
+			print "# send STATUS reply. [status=" + status.Arg + "]"
 
 			time.sleep(0.01)
 			getlist_handle(clientsock)
-			print "[54]"
 			update_handle(sheet.Arg, "1")
-			print "[56]"
 			AllSocket[sheet.Arg] = clientsock
-			print "[58]"
 			return True, sheet.Arg
 		else:
 			clientsock.send(status.toStr())							
-			print "# send STATUS to clinet! [status=" + status.Arg + "]"
+			print "# send STATUS reply. [status=" + status.Arg + "]"
 	
 	print "# someone LOGIN FAIL(1)."
 	return False, ""
@@ -72,20 +146,18 @@ def login_handle(sheet_str, clientsock, clientaddr):
 
 # the definition of UPDATE is not clear
 def update_handle(username, status):
-	'''
+	
 	global NameList, AllSocket
 	
 	sheet = SHEET()
-	print "[new67]"
 	sheet.fill("UPDATE", username, status)
 
 	for name in AllSocket:
-		print "[70]"+name
 		if NameList.has_key(name) and NameList[name][0] == True:
 			s = AllSocket[name]
 			s.send(sheet.toStr())
-	'''
-#	print "# send UPDATE to everyone."
+	
+	print "# send UPDATE to everyone. [" + username +"="+ status + "]"
 
 # handle the GETLIST command from client	
 def getlist_handle(clientsock):
@@ -114,28 +186,12 @@ def message_handle(clientsock, username, content_str):
 			s = AllSocket[name]
 			s.send(sheet.toStr())
 
-	print "# send CSMESSAGE to all clients."	
+	print "# send CSMESSAGE to everyone."	
 
 def beat_handle(username):
 	global NameList
 	NameList[username][3] = time.time()
 	
-
-def check_beat():
-	global NameList
-	cur_time = time.time()
-
-	while 1:
-		if time.time() - cur_time > BEAT_TIME:
-			cur_time = time.time()
-
-			for client in NameList:
-				if NameList[client][0]:
-					if time.time() - NameList[client][3] > BEAT_TIME + EPSILON:
-						NameList[client][0] = False
-						update_handle(client, "0")
-		else:
-			time.sleep(1)
 
 def handle(sheet_str, username, clientsock):
 	global NameList
@@ -155,7 +211,7 @@ def handle(sheet_str, username, clientsock):
 			print "# recv LEAVE request."
 
 			NameList[username][0] = False
-			print "# client [" + sheet.Arg + "] offline,"
+			print "# OFFLINE. [" + sheet.Arg + "]"
 			clientsock.send(sheet.toStr())
 			print "# send LEAVE reply."
 
@@ -185,62 +241,9 @@ def listname():
 	list_str = list_str + "\n"
 	return list_str
 
-myhost = "127.0.0.1"
-host = ''
-port = 51423
-NameList = {}
-AllSocket = {}
-cur_time = time.time()
-BEAT_TIME = 10
-EPSILON = 2
 
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-s.bind((host, port))
-s.listen(10)
 
 print "Server is running on port %d; press Ctrl-C to terminiate." % port
-
-def main(clientsock, clientaddr):
-
-	#-------------------------- handshake --------------------------------	
-	handshake_str = clientsock.recv(1024)			# get handshake
-	handshake = handshake_toForm(handshake_str)
-
-	if handshake.Type != "MINET" :
-		clientsock.close()
-		print "@@@ connection NOT come from Minet!"
-	else:
-		handshake = HANDSHAKE()
-		handshake.Type = "MIRO"
-		handshake.Hostname = myhost
-		clientsock.send(handshake.toStr())			# send handshake_reply
-	#=====================================================================	
-
-	#============================ login ==================================
-		try:
-			cmd_str = clientsock.recv(1024)			# get login 
-			login_tag, username = login_handle(cmd_str, clientsock, clientaddr)
-	
-			#-------------------- command --------------------------------
-			while login_tag and NameList[username][0]:
-				cmd_str = clientsock.recv(1024)			# get login 
-				handle(cmd_str, username, clientsock)
-			#-------------------------------------------------------------
-		except:
-			print "# someone LOGIN FAIL(2)."
-	#=====================================================================
-	print "@@@ Finish connection!"
-	clientsock.close()
-
-
-def start():
-
-	t_bear = thread.start_new_thread(check_beat, ())
-	while 1:
-		clientsock, clientaddr = s.accept()
-		t = thread.start_new_thread(main, (clientsock, clientaddr,))
-	s.close()
 
 
 start()
