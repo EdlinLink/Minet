@@ -37,8 +37,8 @@ def update_NameList(list_body):
 		recd = item.split(" ")
 		if(NameList.has_key(recd[0])):
 			NameList[recd[0]][0] = True
-			NameList[recd[0]][0] = recd[1]
-			NameList[recd[0]][0] = recd[2]
+			NameList[recd[0]][1] = recd[1]
+			NameList[recd[0]][2] = recd[2]
 		else:
 			NameList[recd[0]] = [True, recd[1], recd[2], None, False]
 
@@ -61,8 +61,6 @@ def make_sheet(cmd):
 	if cmd[0]=="LOGIN":
 		Username = cmd[1]
 		sheet.fill(cmd[0], cmd[1])
-		print "[64]"
-		print MY_PORT
 		sheet.headAdd("Port", str(MY_PORT))
 	elif cmd[0]=="GETLIST":
 		sheet.fill(cmd[0])
@@ -121,7 +119,7 @@ def beat_handle(clientsock):
 
 
 def handle(clientsock):
-	global Statue, Username, PROCESSING
+	global Status, Username, PROCESSING
 
 	while 1:
 		sheet_str = clientsock.recv(1024)
@@ -171,10 +169,15 @@ def handle(clientsock):
 def main():
 
 	find_MY_PORT()
+	t_p2p = thread.start_new_thread(p2p_recv_station, ())
+
+	print MY_PORT
 
 	global Username, NameList, PROCESSING
 	s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 	s.connect((SERVER_HOST, SERVER_PORT))
+
+
 
 	# handshake ----------------------------------------------------
 	handshake = HANDSHAKE()
@@ -211,7 +214,6 @@ def main():
 		if Status["login"]:
 			t = thread.start_new_thread(handle, (s,))
 			t_beat = thread.start_new_thread(beat_handle, (s,))
-			t_p2p = thread.start_new_thread(p2p_recv_station, ())
 
 		while Status["login"]:
 			if PROCESSING:
@@ -307,8 +309,22 @@ def p2p_send_station(sheet_str, name):
 def find_MY_PORT():
 	global MY_PORT
 	s = socket.socket()
+	localhost = '127.0.0.1'
 	for myport in range(51000, 60000):
-		localhost = '127.0.0.1'
+		try:
+			s.bind((localhost, int(myport)))
+			s.close()
+			MY_PORT = str(myport)
+			break;
+		except socket.error, e:
+			continue;	
+
+'''			
+def find_MY_PORT():
+	global MY_PORT
+	s = socket.socket()
+	localhost = '127.0.0.1'
+	for myport in range(51000, 60000):
 		try:
 			s.connect((localhost, myport))
 			s.close()
@@ -316,5 +332,5 @@ def find_MY_PORT():
 		except socket.error, e:
 			MY_PORT = str(myport)
 			break;
-
+'''
 main()

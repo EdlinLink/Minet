@@ -57,6 +57,7 @@ def main(clientsock, clientaddr):
 
 	#-------------------------- handshake --------------------------------	
 	handshake_str = clientsock.recv(1024)			# get handshake
+	print "[60]",handshake_str
 	handshake = handshake_toForm(handshake_str)
 
 	if handshake.Type != "MINET" :
@@ -70,7 +71,6 @@ def main(clientsock, clientaddr):
 
 	#============================ login ==================================
 #		try:
-		print "[71]"
 		while 1:
 			cmd_str = clientsock.recv(1024)			# get login 
 			login_tag, username = login_handle(cmd_str, clientsock, clientaddr)
@@ -109,7 +109,6 @@ def print_NameList():
 
 def login_handle(sheet_str, clientsock, clientaddr):
 	global AllSocket
-
 	sheet = sheet_toForm(sheet_str)
 	# LOGIN ----------------------------------------
 	if sheet.Cmd=="LOGIN":
@@ -155,7 +154,10 @@ def update_handle(username, status):
 	for name in AllSocket:
 		if NameList.has_key(name) and NameList[name][0] == True:
 			s = AllSocket[name]
-			s.send(sheet.toStr())
+			try:
+				s.send(sheet.toStr())
+			except:
+				continue
 	
 	print "# send UPDATE to everyone. [" + username +"="+ status + "]"
 
