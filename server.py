@@ -71,6 +71,7 @@ def main(clientsock, clientaddr):
 
 	#============================ login ==================================
 #		try:
+		login_tag = False
 		while 1:
 			cmd_str = clientsock.recv(1024)			# get login 
 			login_tag, username = login_handle(cmd_str, clientsock, clientaddr)
@@ -83,7 +84,10 @@ def main(clientsock, clientaddr):
 			handle(cmd_str, username, clientsock)
 		#-------------------------------------------------------------
 #		except:
-		print "# someone LOGIN FAIL(2)."
+		if login_tag:
+			print "# normal EXIT."
+		else:
+			print "# someone LOGIN FAIL(2)."
 	#=====================================================================
 	print "@@@ Finish connection!"
 	clientsock.close()
@@ -230,6 +234,7 @@ def handle(sheet_str, username, clientsock):
 		if sheet.Cmd=="BEAT":
 			print "# recv BEAT request. [" + username + "]"
 			beat_handle(username)
+			print "[233]", NameList
 
 
 

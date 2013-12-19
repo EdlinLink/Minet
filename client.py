@@ -6,9 +6,10 @@
 #########################################################################
 
 
-import socket, sys, thread, time
+import socket, sys, thread, time, os
 from Msg import HANDSHAKE, handshake_toForm, SHEET, sheet_toForm
 from Logic import cmd_valid, cmd_reply
+from random import randint
 
 PROCESSING = True
 
@@ -26,6 +27,9 @@ NameList = {}
 Username = ""
 BEAT_TIME = 10
 
+SendCode = {}
+RecvCode = {}
+ReplyCode = {}
 
 def update_NameList(list_body):
 	global NameList
@@ -55,6 +59,47 @@ def print_csmessage(csmsg, fromname):
 	print "["+fromname+" ~> msg]:" + csmsg
 	
 
+def get_code():
+	code = randint(00000000000000000000000000000000, 99999999999999999999999999999999)
+	return str(code)
+
+def file_recv(fileport, filepath):
+	sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+	sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+	sock.bind((ALL_HOST, int(fileport)))
+	sock.listen(1)
+
+	filesock, fileaddr = sock.accept()
+	path = filepath.split("/")
+	path = path[-1]
+
+	try:
+		os.mkdir("./download/"+Username)
+	except:
+		i=0
+		print "[80] mkdir not ok"
+
+	f = open("./download/"+Username+"/"+path, "wb")
+	while 1:
+		sheet_str = filesock.recv(1024)
+		if not sheet_str: break
+		
+		print "[87] file recv", sheet_str 
+		sheet = sheet_toForm(sheet_str)
+		print "[89] file_recv_sheet", sheet.toStr()
+
+		if sheet.Cmd=="P2PFILESEND":
+			print "[100-1]"
+			if sheet.Headline["CheckCode"]==ReplyCode[filepath]:
+				print "[100-2]"
+				msg = sheet.Body
+				f.write(msg)
+
+	f.close()
+	sock.close()
+
+
+
 def make_sheet(cmd):
 	global Username
 	sheet = SHEET()
@@ -81,6 +126,28 @@ def make_sheet(cmd):
 			for content in cmd[3:]:
 				msg = msg+" "+content
 		sheet.fill_body(msg)
+	elif cmd[0]=="P2PFILE":
+		sheet.Version = "P2P1.0"
+		sheet.fill(cmd[0], Username, cmd[2])
+		sheet.headAdd("Query", "1")
+		code = get_code()
+		SendCode[cmd[2]] = code
+		sheet.headAdd("SendCode", code)
+	elif cmd[0]=="P2PFILEACCEPT":
+		sheet.Version = "P2P1.0"
+		sheet.fill(cmd[0], Username, cmd[2])
+		
+		sheet.headAdd("RecvCode", RecvCode[cmd[2]])
+
+		code = get_code()
+		ReplyCode[cmd[2]] = code
+		sheet.headAdd("ReplyCode", code)
+
+		fileport = find_idle_port()
+		sheet.headAdd("FILEPORT", fileport)
+
+		# new a thread to recv file
+		file_thread = thread.start_new_thread(file_recv, (fileport, cmd[2],))
 		
 	sheet.headAdd("Content-Length", len(sheet.Body))
 	date = time.strftime("%H:%M:%S@%Y-%m-%d", time.localtime())
@@ -162,6 +229,7 @@ def handle(clientsock):
 			if sheet.Cmd=="CSMESSAGE":
 				if sheet.Arg!=Username:
 					print_csmessage(sheet.Body, sheet.Arg)	
+
 
 		PROCESSING = False
 
@@ -252,6 +320,28 @@ def p2p_recv_station():
 	p2p.close()
 
 
+
+def file_send(ip, port, checkcode, filepath):
+	
+	sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+	sock.connect((ip, int(port)))
+
+	f = open(filepath, "rb")
+	sheet = SHEET()
+	sheet.fill("P2PFILESEND", Username, filepath)
+	sheet.headAdd("CheckCode", checkcode)
+	s = f.read(800)
+	while s:
+		sheet.fill_body(s)
+		sock.send(sheet.toStr())
+		print "[330] file send", sheet.toStr()
+		s = f.read(800)
+		time.sleep(0.1)
+		
+
+	f.close()
+	sock.close()
+
 def p2p_recv(clientsock, clientaddr):
 
 	# handshake ----------------------------------------------------
@@ -275,8 +365,21 @@ def p2p_recv(clientsock, clientaddr):
 			if not sheet_str: break
 
 			sheet = sheet_toForm(sheet_str)
-			msg = sheet.Body
-			print "["+sheet.Arg+" ~> msg]" + msg
+
+			if sheet.Cmd=="P2PMESSAGE":
+				msg = sheet.Body
+				print "["+sheet.Arg+" ~> msg]" + msg
+			elif sheet.Cmd=="P2PFILE":
+				if sheet.Headline.has_key("Query") and sheet.Headline["Query"]=="1":
+					RecvCode[sheet.Arg2] = sheet.Headline["SendCode"]
+					print "["+sheet.Arg+" ~> file]" + "<"+sheet.Arg2+">"
+					print "# Accept reply: 'P2PFILEACCEPT " + sheet.Arg + " " + sheet.Arg2 + "' #"
+					print "# non-reply within 30sec indicate REJECT #"
+			elif sheet.Cmd=="P2PFILEACCEPT":
+				if sheet.Headline["RecvCode"] == SendCode[sheet.Arg2]:
+					# new a thread to handle file transfer
+					
+					file_send_thread = thread.start_new_thread(file_send, (NameList[sheet.Arg][1], sheet.Headline["FILEPORT"], sheet.Headline["ReplyCode"], sheet.Arg2,))
 			
 			if NameList[sheet.Arg][0] == False:
 				break
@@ -319,18 +422,15 @@ def find_MY_PORT():
 		except socket.error, e:
 			continue;	
 
-'''			
-def find_MY_PORT():
-	global MY_PORT
+def find_idle_port():
 	s = socket.socket()
 	localhost = '127.0.0.1'
-	for myport in range(51000, 60000):
+	for idleport in range(51000, 60000):
 		try:
-			s.connect((localhost, myport))
+			s.bind((localhost, int(idleport)))
 			s.close()
-			continue;	
+			return str(idleport)
 		except socket.error, e:
-			MY_PORT = str(myport)
-			break;
-'''
+			continue;	
+
 main()

@@ -9,7 +9,7 @@ def cmd_valid(cmd):
 		return True
 	if len(cmd)==2 and (cmd[0]=="LOGIN" or cmd[0]=="BEAT") and cmd[1]!="":
 		return True
-	if len(cmd)==3 and cmd[0]=="UPDATE" and (cmd[1]=="0" or cmd[1]=="1") and cmd[2]!="":
+	if len(cmd)==3 and (cmd[0]=="UPDATE" and (cmd[1]=="0" or cmd[1]=="1") and cmd[2]!="") or ((cmd[0]=="P2PFILE" or cmd[0]=="P2PFILEACCEPT" or cmd[0]=="P2PFILESEND") and cmd[1]!="" and cmd[2]!=""):
 		return True
 	if len(cmd)>=2 and cmd[0]=="MESSAGE":
 		return True

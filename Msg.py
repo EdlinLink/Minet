@@ -36,12 +36,20 @@ def sheet_toForm(msg):
 			other.headAdd(segname, value)
 			item += 1
 		else:
+			'''
 			item += 1
-			while(item < len(allline) and allline[item]!=""): #there will be an "" at the end
+			#while(item < len(allline) and allline[item]!=""): #there will be an "" at the end
+			while(item < len(allline) ): 
 				other.Body = other.Body + allline[item]+"\n"
 				item = item+1
 			break
+			'''
 
+			for i in allline[item+1:-1]:
+				other.Body = other.Body + i + "\n"
+			if allline[-1]!="":
+				other.Body = other.Body + allline[-1]
+			break
 #		item = item+1
 
 	return other
