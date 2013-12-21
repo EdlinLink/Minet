@@ -5,7 +5,7 @@ from os.path import getsize
 import os
 
 from Msg import HANDSHAKE, handshake_toForm, SHEET, sheet_toForm
-from Logic import cmd_valid, cmd_reply
+from Logic import cmd_valid, cmd_reply, get_code, find_idle_port, btou
 
 
 
@@ -38,6 +38,11 @@ class Client():
 
 		self.Buffer = []
 		self.fileLock = thread.allocate_lock()
+		self.fileLock2 = thread.allocate_lock()
+
+		self.SendCode = {}
+		self.RecvCode = {}
+		self.ReplyCode = {}
 
 	def find_MY_PORT(self):
 		s = socket.socket()
@@ -89,11 +94,85 @@ class Client():
 				for content in cmd[3:]:
 					msg = msg+" "+content
 			sheet.fill_body(msg)
+		elif cmd[0]=="P2PFILE":
+			sheet.Version = "P2P1.0"
+			sheet.fill(cmd[0], self.Username, cmd[2])
+			sheet.headAdd("Query", "1")
+			code = get_code()
+			self.SendCode[cmd[2]] = code
+			sheet.headAdd("SendCode", code)
+		elif cmd[0]=="P2PFILEACCEPT":
+			sheet.Version = "P2P1.0"
+			sheet.fill(cmd[0], self.Username, cmd[2])
 			
+			try:
+				print "[109]", self.RecvCode
+				print "[110]", cmd[2]
+				print "[111]"
+				sheet.headAdd("RecvCode", self.RecvCode[cmd[2]])
+
+			except:
+				sheet.headAdd("RecvCode", "00000000000000000000000000000000") # reply an wrong code
+
+			code = get_code()
+			self.ReplyCode[cmd[2]] = code
+			sheet.headAdd("ReplyCode", code)
+
+			fileport = find_idle_port()
+			sheet.headAdd("FILEPORT", fileport)
+
+			# new a thread to recv file
+			file_thread = thread.start_new_thread(self.file_recv, (fileport, cmd[2],))
+
+
 		sheet.headAdd("Content-Length", len(sheet.Body))
 		date = time.strftime("%H:%M:%S@%Y-%m-%d", time.localtime())
 		sheet.headAdd("Date", date)
 		return sheet
+
+
+	def file_recv(self, fileport, filepath):
+
+		print "[136] file recv~~~"
+		sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+		sock.bind((self.ALL_HOST, int(fileport)))
+		sock.listen(1)
+
+		filesock, fileaddr = sock.accept()
+		path = filepath.split("/")
+		path = path[-1]
+
+		try:
+			os.mkdir("./download/"+self.Username)
+		except:
+			i=0
+
+		f = open("./download/"+self.Username+"/"+path, "wb")
+		while 1:
+			sheet_str = filesock.recv(1024)
+			if not sheet_str: break
+
+			print "[156]", sheet_str
+			sheet = sheet_toForm(sheet_str)
+
+			if sheet.Cmd=="P2PFILESEND":
+				print "[100-1]"
+				if sheet.Headline["CheckCode"]==self.ReplyCode[filepath]:
+					print "[100-2]"
+					msg = sheet.Body
+					f.write(msg)
+
+		f.close()
+		sock.close()
+
+		
+		self.fileLock.acquire()	
+		input = open("./buffer/"+self.Username+"/"+sheet.Arg, "a")
+		input.write("["+sheet.Arg+"] " + " <finish receiving file: " + sheet.Arg2 + ">\n")
+		input.close()
+		self.fileLock.release()
+		
 
 	def thread_for_p2p(self):	
 		print "[93] thread for p2p!"
@@ -241,23 +320,75 @@ class Client():
 				sheet_str = clientsock.recv(1024)
 				if not sheet_str: break
 
+				print "[320]"
+				print sheet_str
+				print "[321]"
 				sheet = sheet_toForm(sheet_str)
 				msg = sheet.Body
 
-				self.fileLock.acquire()	
-				input = open("./buffer/"+self.Username+"/"+sheet.Arg, "a")
-				print "["+sheet.Arg+" ~> msg]" + msg
-				input.write("["+sheet.Arg+"] " + msg + "\n")
-				input.close()
-				self.fileLock.release()
+				if sheet.Cmd=="P2PMESSAGE":
+					self.fileLock.acquire()	
+					input = open("./buffer/"+self.Username+"/"+sheet.Arg, "a")
+					print "["+sheet.Arg+" ~> msg]" + msg
+					input.write("["+sheet.Arg+"] " + msg + "\n")
+					input.close()
+					self.fileLock.release()
+				elif sheet.Cmd=="P2PFILE":
+					if sheet.Headline.has_key("Query") and sheet.Headline["Query"]=="1":
+						self.RecvCode[sheet.Arg2] = sheet.Headline["SendCode"]
+						print "[322] Recv file", sheet.toStr()
+						input = open("./system/"+self.Username+"/"+"P2PFILE", "a")
+						print "["+sheet.Arg+" ~> file]" + "<"+ sheet.Arg2 +">"
+						input.write(sheet.Arg + " " + sheet.Arg2 + "\n")
+						input.close()
+
+
+						self.fileLock.acquire()	
+						input = open("./buffer/"+self.Username+"/"+sheet.Arg, "a")
+						input.write("["+sheet.Arg+"] " + " <try to send file: " + sheet.Arg2 + ">\n")
+						input.close()
+						self.fileLock.release()
+				elif sheet.Cmd=="P2PFILEACCEPT":
 					
+					if self.SendCode.has_key(sheet.Arg2) and sheet.Headline["RecvCode"] == self.SendCode[sheet.Arg2]:
+						file_send_thread = thread.start_new_thread(self.file_send, (self.NameList[sheet.Arg][1], sheet.Headline["FILEPORT"], sheet.Headline["ReplyCode"], sheet.Arg, sheet.Arg2, ))
+
+
 				if self.NameList[sheet.Arg][0] == False:
 					break
 
 			clientsock.close()
+
+
+
+	def file_send(self, ip, port, checkcode, toname, filepath):
+			
+		sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		sock.connect((ip, int(port)))
+
+		f = open(filepath, "rb")
+		sheet = SHEET()
+		sheet.fill("P2PFILESEND", self.Username, filepath)
+		sheet.headAdd("CheckCode", checkcode)
+		s = f.read(800)
+		while s:
+			sheet.fill_body(s)
+			sock.send(sheet.toStr())
+			print "[330] file send", sheet.toStr()
+			s = f.read(800)
+			time.sleep(0.1)
+			
+
+		f.close()
+		sock.close()
+
 		
-
-
+		print "[386]---------------------"
+		self.fileLock.acquire()	
+		input = open("./buffer/"+self.Username+"/"+toname, "a")
+		input.write("["+self.Username+"] " + " <finish sending file: " + filepath + ">\n")
+		input.close()
+		self.fileLock.release()
 
 
 class MainWin(QtGui.QWidget):
@@ -296,7 +427,10 @@ class MainWin(QtGui.QWidget):
 		except:
 			i=0	#do nothing
 
-	
+		try:
+			os.mkdir("./system/"+self.client.Username)
+		except:
+			print "# mkdir system file fail #"
 
 	def MyIcon(self):
 		button = QtGui.QPushButton(self)
@@ -316,7 +450,7 @@ class MainWin(QtGui.QWidget):
 	
 
 	def UpdateIcon(self):
-
+		print "[339] <UpdateIcon> "
 		if self.update_tag != self.client.Status["update"]:
 			self.update_tag = self.client.Status["update"]
 			count = 2.5
@@ -328,7 +462,6 @@ class MainWin(QtGui.QWidget):
 			print "[236]", self.client.NameList
 			for i in self.client.NameList:
 				if self.client.NameList[i][0]==True and i!=self.client.Username:
-					print "[238]", i
 					button = QtGui.QPushButton(self)
 					icon = QtGui.QIcon("icon/"+i+".png")
 					button.setIcon(icon)
@@ -349,7 +482,7 @@ class MainWin(QtGui.QWidget):
 		self.check_msg_buffer()
 
 	def check_msg_buffer(self):
-		print "[354] ..."
+		print "[372] <check_msg_buffer>"
 		addr = "./buffer/"+self.client.Username+"/"
 
 		for i in self.light:
@@ -358,24 +491,23 @@ class MainWin(QtGui.QWidget):
 		self.light = []
 		for i in self.iconlist: 
 
-			print "[364] ..."
 			buffer_path = addr + str(i[1].text())
-			#try:
-			print buffer_path, "[366]"
-			buffer_size = getsize(buffer_path)
-			if buffer_size!=0:
-				
-				print "[370]"
-				red = QtGui.QLabel(self)
-				red.setGeometry(self.pic-15, self.pic*i[3]-5, self.pic, self.pic)
-				red.setPixmap(QtGui.QPixmap("./picture/red.png"))
-				red.show()
-				self.light.append(red)
-			#except:
-				#continue
+			try:
+				buffer_size = getsize(buffer_path)
+				if buffer_size!=0:
+					print "[380] !!!!!!!!!!!! has msg"	
+					red = QtGui.QLabel(self)
+					red.setGeometry(self.pic-15, self.pic*i[3]+15, 10, 10)
+					red.setPixmap(QtGui.QPixmap("./picture/red.png"))
+					red.show()
+					self.light.append(red)
+			except:
+				continue
 
+				
 
 	def DialogBox(self, name):
+		print "[295] <DialogBoc>", name
 		
 		talk = TalkWin(self.client, name)
 		talk.show()
@@ -435,27 +567,41 @@ class TalkWin(QtGui.QWidget):
 
 
 		self.enter.clicked.connect(lambda: self.send_msg( self.name, str(self.input.toPlainText()), self.read, self.input, self.isBcast) )
-	
+		self.file.clicked.connect(lambda: self.open_file_dialog(self.name))
+
 
 		self.timer2=QtCore.QTimer()
 		self.connect(self.timer2, QtCore.SIGNAL("timeout()"), self.get_buffer_content)
 		self.timer2.start(1000)
 
 
-	def get_IMbuffer_content(self):
-		#loop to check IMbuffer
-		has_msg = Fals
-		for i in self.client.Buffer:
-			if self.name==i[0]:
-				content = self.read.toPlainText()
-				content+=i[1]
+	def open_file_dialog(self, name):
+	
+		fileDialog = QtGui.QFileDialog()
+		fileDialog.setFileMode(1) 
+		filename = fileDialog.getOpenFileName()
 
+		filename = btou(str(filename))
+		
+		self.p2pfile(name, filename)
+		
+
+	def p2pfile(self, name, filename):
+		
+		print "[456]", filename
+		cmd = ["P2PFILE", name, filename]
+		sheet = self.client.make_sheet(cmd)
+
+		if sheet.Version=="P2P1.0":
+			if self.client.NameList.has_key(cmd[1]) and self.client.NameList[cmd[1]][0]==True:
+				self.p2p_send_station(sheet.toStr(), cmd[1])                                                                    
+			else:
+				print "# your friend maybe OFFLINE. please check."
 
 
 	def get_buffer_content(self):
 		print "[500] get_buffer_content" 
 		try:
-			print "[/1]"
 			content_size = getsize("./buffer/"+self.client.Username+"/"+self.name)
 			if content_size!=0:
 
@@ -481,6 +627,43 @@ class TalkWin(QtGui.QWidget):
 			i = 0 #do nothing
 			#return ""
 
+		try:
+			print "[530]-1"
+			content_size = getsize("./system/"+self.client.Username+"/"+"P2PFILE")
+			print "[530]-2"
+			if content_size!=0:
+				
+				print "[530]-3"
+				file = open("./system/"+self.client.Username+"/P2PFILE", "r")
+				contents = file.readlines()
+				file.close()
+				file = open("./system/"+self.client.Username+"/P2PFILE", "w")
+				file.close()
+				
+				print "[530]-4"
+
+				for i in contents:
+					print "[542]-5", i
+					i = i.split("\n")
+					fromname, filename = i[0].split(" ")
+					reply = QtGui.QMessageBox.question(self, 'Accept or Reject', "Do you accept file <"+filename+"> from '"+fromname+"'?", QtGui.QMessageBox.Yes, QtGui.QMessageBox.No)
+
+					if reply == QtGui.QMessageBox.Yes:
+						self.p2pfileaccept(fromname, filename)
+					
+		except:
+			i = 0 #do nothing
+
+	def p2pfileaccept(self, name, filename):
+
+		cmd = ["P2PFILEACCEPT", name, filename]
+		sheet = self.client.make_sheet(cmd)
+
+		if sheet.Version=="P2P1.0":
+			if self.client.NameList.has_key(cmd[1]) and self.client.NameList[cmd[1]][0]==True:
+				self.p2p_send_station(sheet.toStr(), cmd[1])                                                                    
+			else:
+				print "# your friend maybe OFFLINE. please check."
 
 	def send_msg(self, name, msg, read, input, isbcast):
 
@@ -489,6 +672,11 @@ class TalkWin(QtGui.QWidget):
 			cmd = cmd_input.split(" ")
 			sheet = self.client.make_sheet(cmd)
 			self.client.s.send(sheet.toStr())
+
+			content = read.toPlainText()+"\n"
+			content+=("["+self.client.Username+"] " + msg + "\n")
+			read.setText("<BroadCast>"+content)
+			input.setText("")
 		else:
 			cmd = ["P2PMESSAGE", name, msg]
 			sheet = self.client.make_sheet(cmd)
@@ -499,10 +687,10 @@ class TalkWin(QtGui.QWidget):
 				else:
 					print "# your friend maybe OFFLINE. please check."
 
-		content = read.toPlainText()+"\n"
-		content+=("["+self.client.Username+"] " + msg + "\n")
-		read.setText("<BroadCast>"+content)
-		input.setText("")
+			content = read.toPlainText()+"\n"
+			content+=("["+self.client.Username+"] " + msg + "\n")
+			read.setText(content)
+			input.setText("")
 
 
 	def p2p_send_station(self, sheet_str, name):

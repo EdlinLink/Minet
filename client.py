@@ -8,7 +8,7 @@
 
 import socket, sys, thread, time, os
 from Msg import HANDSHAKE, handshake_toForm, SHEET, sheet_toForm
-from Logic import cmd_valid, cmd_reply
+from Logic import cmd_valid, cmd_reply, get_code
 from random import randint
 
 PROCESSING = True
@@ -59,9 +59,6 @@ def print_csmessage(csmsg, fromname):
 	print "["+fromname+" ~> msg]:" + csmsg
 	
 
-def get_code():
-	code = randint(00000000000000000000000000000000, 99999999999999999999999999999999)
-	return str(code)
 
 def file_recv(fileport, filepath):
 	sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -137,7 +134,10 @@ def make_sheet(cmd):
 		sheet.Version = "P2P1.0"
 		sheet.fill(cmd[0], Username, cmd[2])
 		
-		sheet.headAdd("RecvCode", RecvCode[cmd[2]])
+		try:
+			sheet.headAdd("RecvCode", RecvCode[cmd[2]])
+		except:
+			sheet.headAdd("RecvCode", "00000000000000000000000000000000") # reply an wrong code
 
 		code = get_code()
 		ReplyCode[cmd[2]] = code
@@ -334,7 +334,7 @@ def file_send(ip, port, checkcode, filepath):
 	while s:
 		sheet.fill_body(s)
 		sock.send(sheet.toStr())
-		print "[330] file send", sheet.toStr()
+		#print "[330] file send", sheet.toStr()
 		s = f.read(800)
 		time.sleep(0.1)
 		
@@ -374,9 +374,11 @@ def p2p_recv(clientsock, clientaddr):
 					RecvCode[sheet.Arg2] = sheet.Headline["SendCode"]
 					print "["+sheet.Arg+" ~> file]" + "<"+sheet.Arg2+">"
 					print "# Accept reply: 'P2PFILEACCEPT " + sheet.Arg + " " + sheet.Arg2 + "' #"
-					print "# non-reply within 30sec indicate REJECT #"
+					print "# non-reply indicate REJECT #"
 			elif sheet.Cmd=="P2PFILEACCEPT":
-				if sheet.Headline["RecvCode"] == SendCode[sheet.Arg2]:
+			
+				print "[380]",sheet.toStr()
+				if SendCode.has_key(sheet.Arg2) and sheet.Headline["RecvCode"] == SendCode[sheet.Arg2]:
 					# new a thread to handle file transfer
 					
 					file_send_thread = thread.start_new_thread(file_send, (NameList[sheet.Arg][1], sheet.Headline["FILEPORT"], sheet.Headline["ReplyCode"], sheet.Arg2,))

@@ -16,6 +16,9 @@ def handshake_toForm(msg):
 		return other
 
 def sheet_toForm(msg):
+	print "[MSG--start]"
+	print msg
+	print "[MSG-end]"
 	other = SHEET()
 	allline = msg.split("\n");
 	requestline = allline[0]
@@ -32,6 +35,7 @@ def sheet_toForm(msg):
 	item = 1
 	while(item < len(allline)):
 		if allline[item] != "":
+			print "[MSG]"+allline[item]+"[/MSG]"
 			segname, value = allline[item].split(" ")
 			other.headAdd(segname, value)
 			item += 1
@@ -52,6 +56,9 @@ def sheet_toForm(msg):
 			break
 #		item = item+1
 
+	print "MSG==="
+	print other.Body
+	print "MSG+++"
 	return other
 
 
